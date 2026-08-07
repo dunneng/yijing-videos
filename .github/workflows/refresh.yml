@@ -2,23 +2,18 @@ name: Refresh AcFun URLs
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # 每2小时
-  workflow_dispatch:        # 手动触发
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b
         with:
           python-version: '3.12'
 
@@ -28,9 +23,8 @@ jobs:
       - name: Generate URLs
         run: |
           python3 << 'PYEOF'
-          import json, subprocess, time, os
+          import json, subprocess, time
           from concurrent.futures import ThreadPoolExecutor, as_completed
-
           def fetch(p):
               r = subprocess.run(['yt-dlp', '--no-playlist', '-f', 'best', '-g',
                   f'https://www.acfun.cn/v/ac36887663_{p}'],
@@ -38,7 +32,6 @@ jobs:
               if r.returncode == 0 and r.stdout.strip():
                   return p, r.stdout.strip().split('\n')[-1].strip()
               return p, None
-
           urls = {}
           with ThreadPoolExecutor(max_workers=5) as ex:
               for f in as_completed([ex.submit(fetch, p) for p in range(1, 151)]):
@@ -46,13 +39,16 @@ jobs:
                   if url:
                       urls[p] = url
                       print(f'OK P{p:03d} ({len(urls)}/150)')
-
           sorted_urls = {str(k): urls[k] for k in sorted(urls.keys())}
-          js = f"// Auto-refreshed {time.strftime('%Y-%m-%d %H:%M UTC')}\nvar ACFUN_URLS = {json.dumps(sorted_urls)};"
+          js = f"// {time.strftime('%Y-%m-%d %H:%M UTC')}\nvar ACFUN_URLS = {json.dumps(sorted_urls)};"
           with open('video_urls.js', 'w') as fp:
               fp.write(js)
-          print(f'Done: {len(urls)}/150 URLs')
+          print(f'Done: {len(urls)}/150')
           PYEOF
 
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@d6db90164ac5ed8f2b6aed28e8b8cf0c7045c4e6  # v4
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add video_urls.js
+          git diff --staged --quiet || (git commit -m "Auto-refresh URLs" && git push)
